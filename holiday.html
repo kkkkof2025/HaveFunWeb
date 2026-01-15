@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中国传统假期倒计时</title>
+    <!-- 引入 lunar.js 库用于处理农历和节气 -->
+    <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        /* 顶部日期栏 */
+        .header-bar {
+            background-color: #FFF7E6;
+            border: 1px solid #FFE7BA;
+            color: #D46B08;
+            padding: 15px 20px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-icon {
+            font-weight: bold;
+        }
+
+        /* 列表样式 */
+        .holiday-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .holiday-card {
+            display: flex;
+            background-color: #F0F5FF;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 80px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        /* 左侧蓝色天数块 */
+        .days-box {
+            background-color: #1890FF;
+            color: white;
+            width: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+        .days-num {
+            font-size: 32px;
+            font-weight: bold;
+            margin-right: 4px;
+        }
+        .days-label {
+            font-size: 16px;
+            margin-top: 8px;
+        }
+
+        /* 右侧详情块 */
+        .info-box {
+            flex-grow: 1;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #333;
+        }
+
+        .info-title {
+            font-size: 16px;
+            font-weight: 500;
+            min-width: 200px;
+        }
+        .highlight-green {
+            color: #52C41A;
+            font-weight: normal;
+        }
+
+        .info-details {
+            font-size: 14px;
+            color: #666;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        @media (max-width: 768px) {
+            .info-box {
+                flex-direction: column;
+                justify-content: center;
+                align-items: flex-start;
+                gap: 5px;
+            }
+            .info-details {
+                text-align: left;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="header" class="header-bar">
+        <span class="header-icon">🔊</span>
+        <span id="header-text">正在计算日期...</span>
+    </div>
+
+    <div id="holiday-list" class="holiday-list">
+        <!-- 列表将由 JS 自动生成 -->
+    </div>
+</div>
+
+<script>
+    // 定义需要追踪的假期类型
+    // type: 1=公历固定, 2=农历, 3=节气
+    const HOLIDAY_DEFS = [
+        { name: "元旦节", type: 1, month: 1, day: 1 },
+        { name: "春节", type: 2, month: 1, day: 1 },
+        { name: "清明", type: 3, term: "清明" },
+        { name: "劳动节", type: 1, month: 5, day: 1 },
+        { name: "端午", type: 2, month: 5, day: 5 },
+        { name: "中秋", type: 2, month: 8, day: 15 },
+        { name: "国庆节", type: 1, month: 10, day: 1 }
+    ];
+
+    let currentHolidays = [];
+
+    // 获取某年的清明节日期 (寻找4月4日-6日中的清明交节点)
+    function getQingmingDate(year) {
+        for (let d = 4; d <= 6; d++) {
+            const solar = Solar.fromYmd(year, 4, d);
+            // 【修复点】：先通过 .getLunar() 转为农历对象，再获取节气
+            if (solar.getLunar().getJieQi() === '清明') {
+                return solar;
+            }
+        }
+        return Solar.fromYmd(year, 4, 4); // 兜底
+    }
+
+    // 生成未来假期的核心逻辑
+    function generateHolidays() {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        let candidates = [];
+
+        // 扫描今年、明年和后年，确保能凑齐7个
+        for (let y = currentYear; y <= currentYear + 2; y++) {
+            HOLIDAY_DEFS.forEach(def => {
+                let targetDate = null;
+                let displayName = `${y}年${def.name}`;
+
+                if (def.type === 1) { // 公历
+                    // 注意：月份在Date对象中是0-11，但lunar.js和我们需要的是1-12
+                    targetDate = new Date(y, def.month - 1, def.day, 0, 0, 0);
+                } else if (def.type === 2) { // 农历
+                    // 农历转公历
+                    const lunar = Lunar.fromYmd(y, def.month, def.day);
+                    const solar = lunar.getSolar();
+                    targetDate = new Date(solar.getYear(), solar.getMonth() - 1, solar.getDay(), 0, 0, 0);
+                } else if (def.type === 3) { // 节气
+                    const solar = getQingmingDate(y);
+                    targetDate = new Date(solar.getYear(), solar.getMonth() - 1, solar.getDay(), 0, 0, 0);
+                }
+
+                if (targetDate) {
+                    // 只保留未来的时间 (加1天缓冲，确保当天还没过完时不消失)
+                    // 这里逻辑是：如果 目标日期+1天 > 现在，说明还没完全过去
+                    if (targetDate.getTime() + 86400000 > now.getTime()) { 
+                        candidates.push({
+                            name: displayName,
+                            date: targetDate
+                        });
+                    }
+                }
+            });
+        }
+
+        // 按时间排序
+        candidates.sort((a, b) => a.date - b.date);
+
+        // 取前7个
+        return candidates.slice(0, 7);
+    }
+
+    // 格式化时间显示
+    function formatDetails(diffMs) {
+        const totalSeconds = Math.floor(diffMs / 1000);
+        const totalMinutes = Math.floor(diffMs / (1000 * 60));
+        const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const totalDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const totalWeeks = Math.floor(totalDays / 7);
+
+        const d = totalDays;
+        const h = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const m = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+        // 补零
+        const pad = (n) => n.toString().padStart(2, '0');
+
+        return `${d}天:${pad(h)}时:${pad(m)}分:${pad(s)}秒 / ${totalWeeks}周 / ${totalHours}小时 / ${totalMinutes}分钟 / ${totalSeconds}个秒`;
+    }
+
+    // 渲染头部
+    function updateHeader() {
+        const now = new Date();
+        const lunar = Lunar.fromDate(now);
+        const dayStr = "星期" + lunar.getWeekInChinese();
+        const dateStr = `${now.getFullYear()}年${(now.getMonth()+1).toString().padStart(2,'0')}月${now.getDate().toString().padStart(2,'0')}日`;
+        
+        // 乙巳年 ...
+        const ganZhiYear = lunar.getYearInGanZhi();
+        const zodiac = lunar.getYearShengXiao();
+        const lunarMonth = lunar.getMonthInChinese();
+        const lunarDay = lunar.getDayInChinese();
+
+        const text = `今天是${dateStr} ${dayStr} ${ganZhiYear}年 农历[${lunarMonth}月${lunarDay}] 属[${zodiac}]`;
+        document.getElementById('header-text').textContent = text;
+    }
+
+    // 渲染列表结构 (只在列表变化时调用)
+    function renderListStructure() {
+        const listEl = document.getElementById('holiday-list');
+        listEl.innerHTML = '';
+        
+        currentHolidays.forEach((h, index) => {
+            const div = document.createElement('div');
+            div.className = 'holiday-card';
+            div.innerHTML = `
+                <div class="days-box">
+                    <span class="days-num" id="day-num-${index}">0</span>
+                    <span class="days-label">天</span>
+                </div>
+                <div class="info-box">
+                    <div class="info-title">
+                        距离${h.name} <span class="highlight-green">还有</span>
+                    </div>
+                    <div class="info-details" id="detail-${index}">
+                        正在计算...
+                    </div>
+                </div>
+            `;
+            listEl.appendChild(div);
+        });
+    }
+
+    // 更新倒计时数字
+    function updateTimers() {
+        const now = new Date();
+        let needRefreshList = false;
+
+        currentHolidays.forEach((h, index) => {
+            const diff = h.date.getTime() - now.getTime();
+            
+            // 如果某个假期已经过去了（比如倒计时变成负数超过1天），标记需要刷新列表
+            if (diff < -86400000) { 
+                 needRefreshList = true;
+            }
+
+            // 防止显示负数
+            const safeDiff = diff > 0 ? diff : 0;
+            const days = Math.floor(safeDiff / (1000 * 60 * 60 * 24));
+
+            // 更新大数字
+            const numEl = document.getElementById(`day-num-${index}`);
+            if (numEl) numEl.textContent = days;
+
+            // 更新详情
+            const detailEl = document.getElementById(`detail-${index}`);
+            if (detailEl) detailEl.textContent = formatDetails(safeDiff);
+        });
+
+        if (needRefreshList) {
+            init(); // 重新生成列表
+        }
+    }
+
+    // 初始化
+    function init() {
+        currentHolidays = generateHolidays();
+        renderListStructure();
+        updateHeader();
+        updateTimers();
+    }
+
+    // 启动
+    window.onload = function() {
+        if (typeof Lunar === 'undefined') {
+            alert("无法加载日历库，请检查网络连接。");
+            return;
+        }
+        init();
+        // 每秒更新时间
+        setInterval(() => {
+            updateHeader(); 
+            updateTimers();
+        }, 1000);
+        
+        // 每天自动刷新一次列表
+        setInterval(init, 1000 * 60 * 60); 
+    };
+
+</script>
+
+</body>
+</html>
